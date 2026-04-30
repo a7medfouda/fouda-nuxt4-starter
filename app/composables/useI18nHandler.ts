@@ -1,19 +1,17 @@
 import { ref } from "vue";
-import { useCookie, useHead, refreshNuxtData } from "nuxt/app";
+import { useCookie, useHead, reloadNuxtApp } from "nuxt/app";
 
 type Lang = "en" | "ar";
 
 export default function useI18nHandler() {
   const refreshing = ref(false);
 
-  // Fix 6.2: Use built-in cookie default instead of a side-effectful assignment
-  // on every composable call.
   const langCookie = useCookie<Lang>("lang", { default: () => "ar" });
 
   const { locale, t } = useI18n({ useScope: "global" });
 
-  // Fix 2.1 + 1.2: Register useHead once with a reactive getter so it runs
-  // correctly on both SSR and the client, and never leaks stale head entries.
+  // Register useHead once with a reactive getter so it runs correctly on both
+  // SSR and the client, and never leaks stale head entries.
   useHead(() => ({
     htmlAttrs: {
       lang: langCookie.value,
@@ -24,23 +22,26 @@ export default function useI18nHandler() {
     },
   }));
 
-  const setLang = async (lang: Lang) => {
+  /**
+   * Sync-only: update cookie + vue-i18n locale + head attrs.
+   * No data fetching — safe to call on app boot.
+   */
+  const setLang = (lang: Lang) => {
     langCookie.value = lang;
     locale.value = lang;
-
-    refreshing.value = true;
-    try {
-      // TODO (Performance – Critical): Replace the wildcard call below with a
-      // selective key list, e.g. refreshNuxtData(['products', 'categories']),
-      // to avoid re-fetching every cached useFetch/useAsyncData key on each
-      // language switch. Doing a full refresh can trigger a network waterfall
-      // and freeze the UI on slow connections.
-      await refreshNuxtData();
-    } finally {
-      refreshing.value = false;
-    }
   };
 
-  // Fix 6.1: Return `refreshing` so consumers can bind disabled/aria-busy states.
-  return { setLang, t, langCookie, refreshing };
+  /**
+   * Full language switch (user-initiated): update state then perform a single
+   * controlled page reload. reloadNuxtApp() triggers one SSR render that reads
+   * the updated cookie and fetches all data in the correct language — once.
+   * The ttl deduplicates accidental double-triggers within 1 second.
+   */
+  const switchLang = (lang: Lang) => {
+    refreshing.value = true;
+    setLang(lang);
+    reloadNuxtApp({ ttl: 1000 });
+  };
+
+  return { setLang, switchLang, t, langCookie, refreshing };
 }
