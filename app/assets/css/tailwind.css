@@ -1,0 +1,16 @@
+@layer base {
+  body {
+    font-family: "Inter", sans-serif;
+  }
+
+  :lang(ar) {
+    font-family: "ExpoArabic", sans-serif;
+  }
+}
+@theme {
+  --color-primary: var(--primary-color);
+  --color-secondary: var(--second-color);
+}
+.prose * {
+  font-family: "ExpoArabic", sans-serif !important;
+}

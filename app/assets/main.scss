@@ -1,0 +1,25 @@
+@use "@/assets/variables/variables" as *;
+
+.shared-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  .shared-button-avatar {
+    background-color: unset;
+    border-radius: 0;
+  }
+}
+.shared-outline-button {
+  border-color: #154066;
+  color: #1f1f1f;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.text-error {
+  font-size: 12px;
+}
