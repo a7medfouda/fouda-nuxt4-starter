@@ -28,6 +28,11 @@ const navLinks = [
     to: "/gsap-examples",
     icon: "i-heroicons-sparkles",
   },
+  {
+    label: t("Form Components"),
+    to: "/form-components",
+    icon: "i-heroicons-clipboard-document-list",
+  },
 ];
 
 const scrolled = ref(false);

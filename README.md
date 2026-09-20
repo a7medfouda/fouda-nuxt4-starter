@@ -64,3 +64,9 @@ A modern, fast, and scalable starter template for building web applications, pow
 ## License
 
 This project is licensed under the MIT License.
+
+## sitemap and robots
+
+sitemap: http://localhost:3000//sitemap.xml
+robots for test:http://localhost:3000/robots.txt?mockProductionEnv
+robots for production live: http://localhost:3000//robots.txt

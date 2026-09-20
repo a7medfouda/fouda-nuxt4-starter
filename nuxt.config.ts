@@ -33,6 +33,16 @@ export default defineNuxtConfig({
   ui: {
     colorMode: false,
   },
+   i18n: {
+    locales: ['ar', 'en'],
+    defaultLocale: 'ar',
+    strategy: 'no_prefix',
+
+  },
+  site: {
+    url: process.env.NUXT_PUBLIC_SITE_URL || "http://localhost:3000/",
+    name: "Nuxt 4 Starter",
+  },
   modules: [
     "@nuxt/ui",
     "@nuxt/eslint",
@@ -41,11 +51,16 @@ export default defineNuxtConfig({
     "@nuxt/fonts",
     "@pinia/nuxt",
     "@pinia-plugin-persistedstate/nuxt",
+    "@nuxtjs/robots",
+    "@nuxtjs/sitemap",
   ],
   i18n: {
     bundle: {
       optimizeTranslationDirective: false,
     },
+  },
+  sitemap: {
+    autoI18n: false,
   },
   vite: {
     plugins: [tailwindcss()],

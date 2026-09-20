@@ -1,466 +1,701 @@
 <script lang="ts" setup>
-import {
-  ref,
-  onMounted,
-  computed,
-  watch,
-  useId,
-} from "vue";
+import { ref, computed, watch, useId, onMounted } from "vue";
 
-const props = defineProps<{
-  modelValue: string | number;
-  error?: boolean;
-  with_label?: boolean;
-  disabled?: boolean;
-  dialCode?: string;
-  smallRadius?: boolean;
-  path?: string;
-  placeholder?: string;
-}>();
-const emit = defineEmits(["update:modelValue", "update:dialCode", "blur"]);
+const DEFAULT_COUNTRY = "SA";
+const DEFAULT_DIAL_CODE = "+966";
 
-const phone = ref(props.modelValue);
-const { t } = useI18n();
-const localPhone: any = ref("");
-const localDialCode = ref(props.dialCode || "+966"); // Default  Saudi Arabia
-const telInputRef = ref();
-const uniqueId = useId();
-
-// Computed property for border radius - match Input component
-const borderRadius = computed(() => {
-  return "8px";
-});
-
-const dropdownBorderRadius = computed(() => {
-  return "8px 0px 0px 8px";
-});
-
-const dropdownBorderRadiusRTL = computed(() => {
-  return "0px 8px 8px 0px";
-});
-
-// Map of dial codes to country codes
-const dialToCountryCodeMap: Record<string, string> = {
-  "+213": "dz", // Algeria
-  "+973": "bh", // Bahrain
-  "+253": "dj", // Djibouti
-  "+20": "eg", // Egypt
-  "+964": "iq", // Iraq
-  "+962": "jo", // Jordan
-  "+965": "kw", // Kuwait
-  "+961": "lb", // Lebanon
-  "+218": "ly", // Libya
-  "+222": "mr", // Mauritania
-  "+212": "ma", // Morocco
-  "+968": "om", // Oman
-  "+970": "ps", // Palestine
-  "+974": "qa", // Qatar
-  "+966": "sa", // Saudi Arabia
-  "+252": "so", // Somalia
-  "+249": "sd", // Sudan
-  "+963": "sy", // Syria
-  "+216": "tn", // Tunisia
-  "+971": "ae", // United Arab Emirates
-  "+967": "ye", // Yemen
-  "+269": "km", // Comoros
+const DIAL_CODE_TO_COUNTRY: Record<string, string> = {
+  "966": "SA",
+  "971": "AE",
+  "974": "QA",
+  "968": "OM",
+  "973": "BH",
+  "965": "KW",
+  "962": "JO",
+  "961": "LB",
+  "970": "PS",
+  "964": "IQ",
+  "20": "EG",
+  "963": "SY",
+  "967": "YE",
+  "212": "MA",
+  "216": "TN",
+  "213": "DZ",
+  "249": "SD",
+  "218": "LY",
+  "1": "US",
+  "44": "GB",
+  "33": "FR",
+  "49": "DE",
+  "90": "TR",
+  "91": "IN",
+  "92": "PK",
+  "880": "BD",
+  "62": "ID",
+  "60": "MY",
+  "63": "PH",
 };
 
-// Computed property to get country code from dial code
-const countryCode = computed(() => {
-  return dialToCountryCodeMap[localDialCode.value] || "sa"; // Default to Syria if not found
-});
+const COUNTRY_MOBILE_PATTERNS: Record<string, RegExp> = {
+  EG: /^(10|11|12|15)\d{8}$/,
+  SA: /^5\d{8}$/,
+  AE: /^5\d{8}$/,
+  KW: /^[4569]\d{7}$/,
+  QA: /^[3567]\d{7}$/,
+  OM: /^[79]\d{7}$/,
+  BH: /^[36]\d{7}$/,
+  JO: /^7\d{8}$/,
+  PS: /^5[69]\d{7}$/,
+  IQ: /^7\d{9}$/,
+  YE: /^7\d{8}$/,
+  SY: /^9\d{8}$/,
+  MA: /^[67]\d{8}$/,
+  TN: /^[2459]\d{7}$/,
+  DZ: /^[567]\d{8}$/,
+  SD: /^[19]\d{8}$/,
+  LY: /^9\d{8}$/,
+};
 
-onMounted(() => {
-  // Set initial values properly
-  phone.value = props.modelValue || "";
-  localPhone.value = props.modelValue || "";
-  // localDialCode.value = props.dial_code || "+966";
-  const inputEl = telInputRef.value?.$el?.querySelector("input");
-  if (inputEl) {
-    inputEl.addEventListener("blur", () => {
-      emit("blur");
-    });
-  }
+const COUNTRY_MAX_LENGTHS: Record<string, number> = {
+  EG: 10,
+  SA: 9,
+  AE: 9,
+  KW: 8,
+  QA: 8,
+  OM: 8,
+  BH: 8,
+  JO: 9,
+  PS: 9,
+  IQ: 10,
+  YE: 9,
+  SY: 9,
+  MA: 9,
+  TN: 8,
+  DZ: 9,
+  SD: 9,
+  LY: 9,
+  US: 10,
+  GB: 10,
+  FR: 9,
+  DE: 11,
+  TR: 10,
+  IN: 10,
+  PK: 10,
+};
 
-  // Emit initial values
-  emit("update:dialCode", localDialCode.value);
-});
+const normalizePhoneNumber = (
+  phone: string | number | null | undefined,
+  dialcode: string | null | undefined,
+) => {
+  const rawPhone = String(phone ?? "").trim();
+  let phoneDigits = rawPhone.replace(/\D/g, "");
+  const dialcodeDigits = String(dialcode ?? "").replace(/\D/g, "");
 
-// Also add this watch to ensure the phone value updates when props change
-watch(
-  () => props.modelValue,
-  (newValue: string | number) => {
-    if (
-      newValue !== undefined &&
-      newValue !== null &&
-      phone.value !== newValue
-    ) {
-      phone.value = newValue;
-      localPhone.value = newValue;
+  if (dialcodeDigits) {
+    if (rawPhone.startsWith("+") && phoneDigits.startsWith(dialcodeDigits)) {
+      phoneDigits = phoneDigits.slice(dialcodeDigits.length);
+    } else {
+      const internationalPrefix = `00${dialcodeDigits}`;
+      if (rawPhone.startsWith("00") && phoneDigits.startsWith(internationalPrefix)) {
+        phoneDigits = phoneDigits.slice(internationalPrefix.length);
+      } else if (
+        phoneDigits.startsWith(dialcodeDigits) &&
+        phoneDigits.length >= dialcodeDigits.length + 7
+      ) {
+        phoneDigits = phoneDigits.slice(dialcodeDigits.length);
+      }
     }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => props.dialCode,
-  (newValue: string | undefined) => {
-    if (newValue) {
-      localDialCode.value = newValue;
-    }
-  },
-  { immediate: true },
-);
-
-// This function handles the component's events
-function handlePhoneInput(event: any, phoneObject: any) {
-  // If we have a valid phone object with country info (from dropdown selection)
-  if (phoneObject && phoneObject.number) {
-    localPhone.value = phoneObject.number;
-    const dialCode = phoneObject.countryCallingCode
-      ? `+${phoneObject.countryCallingCode}`
-      : localDialCode.value;
-    localDialCode.value = dialCode;
-    emit("update:modelValue", phoneObject.nationalNumber);
-    emit("update:dialCode", dialCode);
-    //     emit("update:dialCode", {
-    //   ...phoneObject,
-    //   iso2: phoneObject?.countryCode || phoneObject?.iso2,
-    //   dialCode: phoneObject?.countryCallingCode || phoneObject?.dialCode,
-    // });
-    return;
   }
 
-  // If event is an InputEvent (typing directly)
-  if (event && event.target && event.target.value !== undefined) {
-    localPhone.value = event.target.value;
-    emit("update:modelValue", event.target.value);
-    return;
+  return phoneDigits.replace(/^0+/, "");
+};
+
+function validatePhoneNumber(
+  phone: string,
+  countryCode: string,
+  dialCode: string,
+  libValid?: boolean,
+): boolean {
+  if (!phone || !String(phone).trim()) return true;
+
+  const codeIso = countryCode ? countryCode.toUpperCase() : "";
+  let digits = String(phone).replace(/\D/g, "");
+  const dialDigits = String(dialCode).replace(/\D/g, "");
+
+  if (dialDigits && digits.startsWith(dialDigits)) {
+    digits = digits.slice(dialDigits.length);
+  }
+  digits = digits.replace(/^0+/, "");
+
+  if (COUNTRY_MOBILE_PATTERNS[codeIso]) {
+    return COUNTRY_MOBILE_PATTERNS[codeIso].test(digits);
   }
 
-  // If event is just a string value
-  if (typeof event === "string") {
-    localPhone.value = event;
-    emit("update:modelValue", event);
+  if (libValid !== undefined) {
+    return libValid;
   }
+
+  return digits.length >= 7 && digits.length <= 12;
 }
 
-// Function for the on-country-change event
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string | number;
+    error?: boolean;
+    with_label?: boolean;
+    label?: string;
+    disabled?: boolean;
+    dialCode?: string;
+    defaultDialCode?: string | null;
+    defaultCountry?: string | null;
+    smallRadius?: boolean;
+    path?: string;
+    placeholder?: string;
+  }>(),
+  {
+    modelValue: "",
+    with_label: false,
+    disabled: false,
+    dialCode: "966",
+    placeholder: "",
+  },
+);
+
+const emit = defineEmits<{
+  (e: "update:modelValue", value: string): void;
+  (e: "update:dialCode", value: string): void;
+  (e: "update:country", value: string): void;
+  (e: "update:isValid", value: boolean): void;
+  (e: "update:is-valid", value: boolean): void;
+  (e: "blur"): void;
+}>();
+
+const { t, locale } = useI18n();
+const isRtl = computed(() => locale.value === "ar");
+const uniqueId = useId();
+const telInputRef = ref();
+
+const normalizeDial = (code?: string | number | null) => {
+  if (!code) return DEFAULT_DIAL_CODE;
+  const str = String(code).trim();
+  return str.startsWith("+") ? str : `+${str}`;
+};
+
+const activeDialCode = computed(() => props.defaultDialCode || props.dialCode);
+
+const localDialCode = ref(normalizeDial(activeDialCode.value));
+const phone = ref(
+  props.modelValue !== undefined && props.modelValue !== null
+    ? normalizePhoneNumber(props.modelValue, localDialCode.value)
+    : "",
+);
+const effectiveCountry = computed(() => {
+  if (
+    props.defaultCountry &&
+    typeof props.defaultCountry === "string" &&
+    props.defaultCountry.trim() !== "" &&
+    props.defaultCountry !== "null"
+  ) {
+    return props.defaultCountry.toUpperCase();
+  }
+
+  const dialCodeStr = activeDialCode.value || localDialCode.value;
+  if (dialCodeStr) {
+    const digits = String(dialCodeStr).replace(/\D/g, "");
+    if (DIAL_CODE_TO_COUNTRY[digits]) {
+      return DIAL_CODE_TO_COUNTRY[digits];
+    }
+  }
+
+  return DEFAULT_COUNTRY;
+});
+
+const currentMaxLength = computed(() => {
+  const code = effectiveCountry.value ? effectiveCountry.value.toUpperCase() : "";
+  return COUNTRY_MAX_LENGTHS[code] || 12;
+});
+
+const isValidPhone = ref<boolean>(true);
+
+const checkValidity = (libValid?: boolean) => {
+  const valid = validatePhoneNumber(
+    String(phone.value),
+    effectiveCountry.value,
+    localDialCode.value,
+    libValid,
+  );
+  isValidPhone.value = valid;
+  emit("update:isValid", valid);
+  emit("update:is-valid", valid);
+};
+
+defineExpose({
+  isValid: isValidPhone,
+  checkValidity,
+});
+
+watch(
+  () => activeDialCode.value,
+  (newDial) => {
+    if (newDial) {
+      localDialCode.value = normalizeDial(newDial);
+      checkValidity();
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    if (newValue !== undefined && newValue !== null) {
+      const normalized = normalizePhoneNumber(newValue, localDialCode.value);
+      if (phone.value !== normalized) {
+        phone.value = normalized;
+      }
+      checkValidity();
+    }
+  },
+  { immediate: true },
+);
+
+onMounted(() => {
+  phone.value = normalizePhoneNumber(phone.value, localDialCode.value);
+  emit("update:modelValue", phone.value);
+  emit("update:dialCode", localDialCode.value.replace(/^\+/, ""));
+  emit("update:country", effectiveCountry.value);
+  checkValidity();
+});
+
+function handlePhoneInput(event: any, phoneObject: any) {
+  const currentCountry = phoneObject?.countryCode || effectiveCountry.value;
+  const currentDialCode = phoneObject?.countryCallingCode
+    ? `+${phoneObject.countryCallingCode}`
+    : localDialCode.value;
+  const maxLen =
+    COUNTRY_MAX_LENGTHS[currentCountry ? currentCountry.toUpperCase() : ""] ||
+    currentMaxLength.value;
+
+  const rawNum =
+    phoneObject?.nationalNumber ||
+    phoneObject?.number ||
+    (event && event.target && event.target.value !== undefined
+      ? event.target.value
+      : typeof event === "string"
+        ? event
+        : phone.value);
+
+  let normalized = normalizePhoneNumber(String(rawNum), currentDialCode);
+  if (normalized.length > maxLen) {
+    normalized = normalized.slice(0, maxLen);
+  }
+  phone.value = normalized;
+
+  if (phoneObject && phoneObject.countryCallingCode) {
+    const dial = `+${phoneObject.countryCallingCode}`;
+    localDialCode.value = dial;
+    emit("update:dialCode", String(phoneObject.countryCallingCode));
+    if (phoneObject.countryCode) {
+      emit("update:country", phoneObject.countryCode);
+    }
+  }
+
+  const valid = validatePhoneNumber(
+    normalized,
+    currentCountry,
+    currentDialCode,
+    phoneObject?.valid,
+  );
+  isValidPhone.value = valid;
+  emit("update:isValid", valid);
+  emit("update:is-valid", valid);
+  emit("update:modelValue", normalized);
+}
+
 function handleCountryChange(country: any) {
   if (country && country.dialCode) {
-    const dialCode = `+${country.dialCode}`;
-    localDialCode.value = dialCode;
-    emit("update:dialCode", dialCode);
-    // emit("update:dialCode", country);
+    const dial = `+${country.dialCode}`;
+    const countryIso = country.iso2 || country.countryCode || effectiveCountry.value;
+    const maxLen = COUNTRY_MAX_LENGTHS[countryIso.toUpperCase()] || 12;
+
+    localDialCode.value = dial;
+    emit("update:dialCode", String(country.dialCode));
+    emit("update:country", countryIso);
+
+    let normalized = normalizePhoneNumber(phone.value, dial);
+    if (normalized.length > maxLen) {
+      normalized = normalized.slice(0, maxLen);
+    }
+    phone.value = normalized;
+    emit("update:modelValue", phone.value);
+
+    const valid = validatePhoneNumber(
+      String(phone.value),
+      countryIso,
+      dial,
+      true,
+    );
+    isValidPhone.value = valid;
+    emit("update:isValid", valid);
+    emit("update:is-valid", valid);
   }
 }
 
 function onlyAllowDigits(event: KeyboardEvent) {
   const key = event.key;
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab", "Enter"].includes(key)
+  ) {
+    return;
+  }
   if (!/^\d$/.test(key)) {
+    event.preventDefault();
+    return;
+  }
+  const currentDigits = String(phone.value).replace(/\D/g, "");
+  if (currentDigits.length >= currentMaxLength.value) {
     event.preventDefault();
   }
 }
-[];
 </script>
 
 <template>
-  <UFormField :name="path">
+  <div
+    class="phone-input-wrapper w-full"
+    :dir="isRtl ? 'rtl' : 'ltr'"
+    :class="{
+      'phone-error': error || (!isValidPhone && String(phone).trim() !== ''),
+      'is-rtl': isRtl,
+      'is-ltr': !isRtl,
+    }"
+  >
+    <label
+      v-if="with_label"
+      :for="`phoneInput-${uniqueId}`"
+      class="text-third text-sm font-semibold mb-2 block"
+    >
+      {{ label || t("Phone Number") }}
+    </label>
     <client-only>
-      <div class="tw-w-full">
-        <label
-          v-if="with_label"
-          :for="`phoneInput-${uniqueId}`"
-          class="sm:tw-text-sm tw-text-xs tw-font-medium tw-mb-1 tw-text-black tw-block"
-        >
-          {{ t("Phone Number") }}
-        </label>
-        <vue-tel-input
-          ref="telInputRef"
-          v-model:value="phone"
-          :key="countryCode"
-          :id="`phoneInput-${uniqueId}`"
-          dir="ltr"
-          :disabled="disabled"
-          :aria-invalid="error ? 'true' : undefined"
-          :input-options="{
-            placeholder: placeholder || t('Phone'),
-            inputmode: 'numeric',
-            pattern: '[0-9]*',
-            type: 'tel',
-            id: `phoneInput-${uniqueId}`,
-          }"
-          :dropdown-options="{
-            showFlags: true,
-            showDialCode: true,
-            showDialCodeInList: true,
-            showDialCodeInSelection: true,
-            showSearchBox: true,
-          }"
-          :defaultCountry="countryCode"
-          :mode="'international'"
-          :preferred-countries="[
-            'SA',
-            'EG',
-            'AE',
-            'SY',
-            'QA',
-            'OM',
-            'BH',
-            'KW',
-            'JO',
-            'LB',
-            'PS',
-            'IQ',
-          ]"
-          @input="handlePhoneInput"
-          @country-changed="handleCountryChange"
-          @keypress="onlyAllowDigits"
-          :class="error ? 'phone-error' : ''"
-        ></vue-tel-input>
-      </div>
+      <vue-tel-input
+        ref="telInputRef"
+        v-model:value="phone"
+        :id="`phoneInput-${uniqueId}`"
+        :dir="isRtl ? 'rtl' : 'ltr'"
+        :disabled="disabled"
+        :aria-invalid="
+          error || (!isValidPhone && String(phone).trim() !== '')
+            ? 'true'
+            : undefined
+        "
+        :maxlength="currentMaxLength"
+        :input-options="{
+          placeholder: placeholder || t('Phone Number'),
+          inputmode: 'numeric',
+          pattern: '[0-9]*',
+          type: 'tel',
+          id: `phoneInput-${uniqueId}`,
+          maxlength: currentMaxLength,
+        }"
+        :dropdown-options="{
+          showFlags: true,
+          showDialCode: true,
+          showDialCodeInList: true,
+          showDialCodeInSelection: true,
+          showSearchBox: true,
+        }"
+        :default-country="effectiveCountry"
+        :mode="'international'"
+        :preferred-countries="[
+          'SA',
+          'EG',
+          'AE',
+          'KW',
+          'QA',
+          'OM',
+          'BH',
+          'JO',
+          'LB',
+          'SY',
+          'IQ',
+          'PS',
+        ]"
+        @input="handlePhoneInput"
+        @country-changed="handleCountryChange"
+        @keypress="onlyAllowDigits"
+      />
       <template #fallback>
-        <div class="tw-w-full">
-          <label
-            v-if="with_label"
-            class="sm:tw-text-sm tw-text-xs tw-font-medium tw-mb-1 tw-text-transparent tw-block opacity-0"
-          >
-            {{ t("Phone Number") }}
-          </label>
-          <div
-            class="tw-h-[41.6px] tw-w-full tw-rounded tw-bg-[#f3f4f6] tw-animate-pulse"
-          ></div>
-        </div>
+        <div
+          class="h-[46px] w-full rounded-[16px] bg-[#F8FAFC] border border-[#E2E8F0] animate-pulse"
+        />
       </template>
     </client-only>
-  </UFormField>
+    <p
+      v-if="!isValidPhone && String(phone).trim() !== ''"
+      class="text-red-500 text-xs mt-1"
+    >
+      {{ t("Please enter a valid phone number") }}
+    </p>
+  </div>
 </template>
 
 <style lang="scss">
-// Form item base styles to match Input component
-:deep(.u-form-group) {
-  --n-label-font-size: 14px !important;
-  --n-label-padding: 0 !important;
-  margin-bottom: 0 !important;
+.phone-input-wrapper {
+  width: 100%;
 }
 
-// Hide form item asterisk
-:deep(.u-form-group-label__asterisk) {
-  display: none !important;
-}
-.vue-tel-input:hover {
-  // border: 1px solid transparent !important;
-}
 .vue-tel-input {
-  width: 100%;
-  border-radius: v-bind(borderRadius) !important;
-  height: 41.6px; // Match Input component height
-  border: 0px solid transparent;
-  transition: border-color 0.2s ease;
-  position: relative;
+  width: 100% !important;
+  height: 46px !important;
+  border-radius: 16px !important;
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.2s ease-in-out !important;
+  box-shadow: none !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+
+  &:hover {
+    border-color: #cbd5e1 !important;
+  }
+
+  &:focus-within {
+    border-color: var(--primary-color, #26467b) !important;
+    outline: 1px solid var(--primary-color, #26467b) !important;
+    background-color: #ffffff !important;
+  }
+
   &.disabled {
-    opacity: 0.5;
-  }
-  :dir(rtl) & {
-    direction: rtl;
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+    background-color: #f1f5f9 !important;
   }
 }
-.vue-tel-input input::placeholder {
-  color: #e1e1e1 !important; // Match Input component placeholder color
+
+// LTR Layout
+.is-ltr,
+:dir(ltr),
+html[dir="ltr"] {
+  .vue-tel-input {
+    direction: ltr !important;
+  }
+
+  .vti__dropdown {
+    border-right: 1px solid #e2e8f0 !important;
+    border-left: none !important;
+    border-top-left-radius: 16px !important;
+    border-bottom-left-radius: 16px !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+
+  .vti__input {
+    direction: ltr !important;
+    text-align: left !important;
+    border-top-right-radius: 16px !important;
+    border-bottom-right-radius: 16px !important;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+  }
+
+  .vti__dropdown-list {
+    direction: ltr !important;
+    text-align: left !important;
+    left: 0 !important;
+    right: auto !important;
+
+    input,
+    .vti__search_box {
+      direction: ltr !important;
+      text-align: left !important;
+    }
+  }
+
+  .vti__dropdown-arrow {
+    margin-left: 4px !important;
+    margin-right: 0 !important;
+  }
+
+  .vti__country-code {
+    margin-left: 4px !important;
+    margin-right: 0 !important;
+  }
 }
-// dropdown
-.vti__dropdown {
-  padding: 0 8px !important;
-  position: unset;
-  @apply tw-flex-shrink-0;
+
+// RTL Layout
+.is-rtl,
+:dir(rtl),
+html[dir="rtl"] {
+  .vue-tel-input {
+    direction: rtl !important;
+  }
+
+  .vti__dropdown {
+    border-left: 1px solid #e2e8f0 !important;
+    border-right: none !important;
+    border-top-right-radius: 16px !important;
+    border-bottom-right-radius: 16px !important;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+  }
+
+  .vti__input {
+    direction: rtl !important;
+    text-align: right !important;
+    border-top-left-radius: 16px !important;
+    border-bottom-left-radius: 16px !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+
+  .vti__dropdown-list {
+    direction: rtl !important;
+    text-align: right !important;
+    right: 0 !important;
+    left: auto !important;
+
+    input,
+    .vti__search_box {
+      direction: rtl !important;
+      text-align: right !important;
+    }
+  }
+
+  .vti__dropdown-arrow {
+    margin-right: 4px !important;
+    margin-left: 0 !important;
+  }
+
+  .vti__country-code {
+    margin-right: 4px !important;
+    margin-left: 0 !important;
+  }
+}
+
+// Dropdown (flag and dial code)
+.vue-tel-input .vti__dropdown {
+  background: transparent !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  height: 100% !important;
+  padding: 0 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: background-color 0.2s ease !important;
+
+  &:hover,
+  &.open {
+    background-color: rgba(38, 70, 123, 0.05) !important;
+  }
+
   &::after {
-    display: none;
+    display: none !important;
   }
 }
 
-// dropdown list
-.vue-tel-input .vti__dropdown-list {
-  background: #fff;
-  box-shadow: 0px 4px 4px 0px rgba(0, 0, 0, 0.12);
-  border: none;
-  color: black !important;
-  width: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 12px;
-  border-radius: 8px;
-  max-height: 185px !important;
+.vue-tel-input .vti__selection {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 14px !important;
 
-  // Fix scroll containment issue
-  overflow-y: auto !important;
-  overscroll-behavior: contain !important;
-  -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-y !important;
-  position: absolute !important;
-  z-index: 50 !important;
-
-  .vti__dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px;
-    &.highlighted {
-      background-color: #eff6ff;
-      border-radius: 4px;
-    }
+  .vti__country-code {
+    color: #0f172a !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
   }
 }
-@media (max-width: 576px) {
-  .vue-tel-input .vti__dropdown-list {
-    padding: 10px;
-    .vti__dropdown-item {
-      padding: 8px;
-    }
-  }
+
+.vue-tel-input .vti__dropdown-arrow {
+  color: #64748b !important;
+  font-size: 10px !important;
 }
-// input - match Input component styling
+
+// Input field
 .vue-tel-input .vti__input {
-  font-size: 14px; // Match Input component
-  border-top-right-radius: v-bind(borderRadius);
-  border-bottom-right-radius: v-bind(borderRadius);
-  background: transparent !important; // Match Input component
-  border: 1px solid #e1e1e1; // Match Input component
-  border-left: none;
-  padding-right: 12px;
-  color: #8e8e8e !important; // Match Input component
-  height: 41.6px !important; // Match Input component
-  transition: border-color 0.2s ease;
-
-  // &:hover {
-  //   border-color: #D61F2B !important; // Match Input component hover
-  // }
+  background: transparent !important;
+  border: none !important;
+  height: 100% !important;
+  padding: 0 16px !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+  width: 100% !important;
 
   &:focus {
-    // border: 1px solid #e1e1e1 !important;
+    outline: none !important;
     box-shadow: none !important;
+    border: none !important;
   }
 
   &::placeholder {
-    color: #e1e1e1 !important; // Match Input component
-    font-weight: light !important;
-    font-size: 16px !important;
-    }
-  // @media (min-width: 1024px) {
-  //   font-size: 14px !important; // Match Input component
-  //   &::placeholder {
-  //     font-size: 14px !important;
-  //   }
-  // }
-
-  :dir(rtl) & {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: none;
-    border-left: 1px solid #e1e1e1;
-    border-top-left-radius: v-bind(borderRadius);
-    border-bottom-left-radius: v-bind(borderRadius);
-    direction: rtl;
-    @apply tw-pl-0 tw-pr-3 tw-text-end;
-  }
-
-  // Responsive font size for mobile
-  @media (max-width: 768px) {
-    font-size: 16px !important; // Prevent zoom on iOS
-
-    &::placeholder {
-      font-size: 16px !important;
-    }
+    color: #94a3b8 !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
   }
 }
 
-// error input
-.phone-error {
-  .vti__dropdown,
-  input {
-    border-color: #e1e1e1 !important;
-  }
-}
-.phone-error:focus-within {
-  .vti__dropdown,
-  input {
-    border-color: #e1e1e1 !important;
-    // box-shadow: 0 0 0 2px rgba(208, 48, 80, 0.2) !important;
-  }
-}
-
-// hide dropdown arrow
-.vue-tel-input .vti__dropdown-arrow {
-  display: none !important;
-}
-
-.vue-tel-input .vti__dropdown.open::after {
-  transform: translateY(-50%) rotate(180deg);
-}
-
-li.vti__dropdown-item.preferred,
-li.vti__dropdown-item {
-  font-size: 12px;
-}
-
-.vti__dropdown-list.below {
-  top: 55px !important;
-  z-index: 50 !important;
-
-  // Additional scroll containment for the positioned dropdown
+// Dropdown popup menu
+.vue-tel-input .vti__dropdown-list {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 12px 32px 0 rgba(15, 23, 42, 0.12) !important;
+  padding: 8px !important;
+  max-height: 220px !important;
+  width: 280px !important;
+  z-index: 99999 !important;
+  top: 50px !important;
   overflow-y: auto !important;
-  overscroll-behavior: contain !important;
-  scroll-behavior: smooth !important;
-}
 
-[dir="rtl"] .vti__dropdown-list.below {
-  direction: rtl;
-  font-size: 12px;
-  text-align: right;
-}
+  .vti__dropdown-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 8px 12px !important;
+    border-radius: 10px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: #0f172a !important;
+    cursor: pointer !important;
+    transition: background 0.15s ease !important;
 
-/* .vti__selection .vti__flag {
-  display: none !important;
-} */
+    strong {
+      font-weight: 600 !important;
+    }
 
-.vti__dropdown-list .vti__flag {
-  display: inline-block !important;
-  margin-right: 0;
-}
+    &.highlighted,
+    &:hover {
+      background-color: #eff6ff !important;
+      color: #26467b !important;
+    }
+  }
 
-.vti__selection {
-  font-size: 2px !important;
-}
+  input,
+  .vti__search_box {
+    width: 100% !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    padding: 6px 10px !important;
+    margin-bottom: 6px !important;
+    outline: none !important;
+    font-size: 13px !important;
+    background: #f8fafc !important;
 
-.vti__dropdown,
-.vti__dropdown:hover,
-.vti__dropdown.open {
-  background: transparent !important; // Match Input component
-  border: 1px solid #e1e1e1 !important; // Match Input component
-  border-radius: v-bind(dropdownBorderRadius);
-  transition: border-color 0.2s ease;
-  height: 41.6px !important; // Match Input component
-
-  :dir(rtl) & {
-    border-radius: v-bind(dropdownBorderRadiusRTL);
+    &:focus {
+      border-color: #26467b !important;
+    }
   }
 }
 
-input:-webkit-autofill {
-  -webkit-text-fill-color: black !important;
-}
-
-.vue-tel-input:focus-within {
-  box-shadow: none !important;
-  border: none !important;
-
-  .vti__dropdown {
-    border-color: #e1e1e1 !important; // Match Input component focus
-  }
-}
-
-.vti__selection .vti__country-code {
-  color: #333 !important; // Match Input component text color
-  font-size: 12px !important; // Match Input component font size
-  @apply ltr:tw-ml-[5px];
+// Error state
+.phone-error .vue-tel-input {
+  border-color: #ef4444 !important;
+  outline: 1px solid #ef4444 !important;
 }
 </style>

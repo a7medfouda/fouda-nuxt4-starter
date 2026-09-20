@@ -25,6 +25,7 @@ const navLinks = [
   { label: t("Contact Us"), to: "/contact", icon: "i-heroicons-envelope" },
   { label: t("Swiper Examples"), to: "/swiper-examples", icon: "i-heroicons-squares-2x2" },
   { label: t("GSAP Examples"), to: "/gsap-examples", icon: "i-heroicons-sparkles" },
+  { label: t("Form Components"), to: "/form-components", icon: "i-heroicons-clipboard-document-list" },
 ];
 
 const route = useRoute();
